@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "novique.lists",
+  "name": "Lists",
+  "version": "1.1.0",
+  "author": "Novique",
+  "license": "MIT",
+  "description": "Checklists from the Omarchy menu bar: nested items, due dates, and archive when done.",
+  "kinds": [
+    "service",
+    "panel",
+    "bar-widget"
+  ],
+  "activation": "on-demand",
+  "entryPoints": {
+    "service": "Service.qml",
+    "panel": "App.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Lists",
+    "description": "Open checklists with nested items and due dates.",
+    "category": "Productivity",
+    "aliases": [
+      "lists",
+      "checklist",
+      "todo",
+      "tasks"
+    ],
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
