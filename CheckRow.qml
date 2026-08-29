@@ -27,9 +27,9 @@ CursorSurface {
   signal indentRequested()
   signal outdentRequested()
   signal dueEditRequested()
-  signal dueChanged(string due)
+  signal dueSubmitted(string due)
   signal dueEditCanceled()
-  signal hovered(bool isHovered)
+  signal rowHovered(bool isHovered)
 
   readonly property color dueColor: {
     if (root.checked || root.dimmed) return Color.muted
@@ -60,7 +60,7 @@ CursorSurface {
     anchors.fill: parent
     hoverEnabled: true
     acceptedButtons: Qt.NoButton
-    onContainsMouseChanged: root.hovered(containsMouse)
+    onContainsMouseChanged: root.rowHovered(containsMouse)
   }
 
   Row {
@@ -203,13 +203,13 @@ CursorSurface {
         verticalPadding: Style.space(2)
         horizontalPadding: Style.space(6)
         onVisibleChanged: if (visible) root.beginDueEdit()
-        onAccepted: root.dueChanged(text)
+        onAccepted: root.dueSubmitted(text)
         Keys.onEscapePressed: function(event) {
           event.accepted = true
           root.dueEditCanceled()
         }
         onActiveFocusChanged: {
-          if (root.editingDue && !activeFocus) root.dueChanged(text)
+          if (root.editingDue && !activeFocus) root.dueSubmitted(text)
         }
       }
     }

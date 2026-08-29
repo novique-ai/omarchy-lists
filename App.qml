@@ -498,12 +498,12 @@ Item {
                         root.editingItemId = ""
                         root.editingDueId = itemId
                       }
-                      onDueChanged: function(due) {
+                      onDueSubmitted: function(due) {
                         if (lists) lists.setDue(itemId, due)
                         root.editingDueId = ""
                       }
                       onDueEditCanceled: root.editingDueId = ""
-                      onHovered: function(isHovered) {
+                      onRowHovered: function(isHovered) {
                         if (isHovered) root.focusedItemId = itemId
                       }
                     }
