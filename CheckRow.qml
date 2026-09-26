@@ -13,6 +13,10 @@ CursorSurface {
   property bool editingDue: false
   property bool dimmed: false
   property int depth: 0
+  property int childCount: 0
+  property bool collapsed: false
+  property bool focused: false
+  property bool dragging: false
   property string due: ""
   property string dueLabel: ""
   property string dueKind: "none"
@@ -29,7 +33,12 @@ CursorSurface {
   signal dueEditRequested()
   signal dueSubmitted(string due)
   signal dueEditCanceled()
+  signal collapseRequested()
   signal rowHovered(bool isHovered)
+  signal gripStarted()
+  signal gripMoved(real x, real y)
+  signal gripReleased()
+  signal gripCanceled()
 
   readonly property color dueColor: {
     if (root.checked || root.dimmed) return Color.muted
@@ -52,7 +61,8 @@ CursorSurface {
 
   implicitHeight: Math.max(Style.space(34), row.implicitHeight + Style.space(8))
   radius: Style.cornerRadius
-  current: false
+  current: root.focused
+  opacity: root.dragging ? 0.35 : 1
   hasCursor: rowHover.containsMouse && !root.editing && !root.editingDue
 
   MouseArea {
@@ -70,7 +80,83 @@ CursorSurface {
     anchors.verticalCenter: parent.verticalCenter
     anchors.leftMargin: Style.space(8) + root.depth * Style.space(20)
     anchors.rightMargin: Style.space(6)
-    spacing: Style.space(8)
+    spacing: Style.space(6)
+
+    Item {
+      id: gripSlot
+      width: Style.space(14)
+      height: Style.space(18)
+      anchors.verticalCenter: parent.verticalCenter
+
+      Text {
+        anchors.centerIn: parent
+        text: "⋮"
+        color: root.foreground
+        opacity: grip.pressed || rowHover.containsMouse ? 0.85 : 0.28
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+      }
+
+      MouseArea {
+        id: grip
+        anchors.fill: parent
+        anchors.margins: -6
+        preventStealing: true
+        cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+        property real pressX: 0
+        property real pressY: 0
+        property bool armed: false
+
+        onPressed: function(mouse) {
+          pressX = mouse.x
+          pressY = mouse.y
+          armed = false
+        }
+        onPositionChanged: function(mouse) {
+          if (!(mouse.buttons & Qt.LeftButton)) return
+          if (!armed) {
+            var distance = Math.abs(mouse.x - pressX) + Math.abs(mouse.y - pressY)
+            if (distance < Style.space(4)) return
+            armed = true
+            root.gripStarted()
+          }
+          var mapped = mapToItem(root, mouse.x, mouse.y)
+          root.gripMoved(mapped.x, mapped.y)
+        }
+        onReleased: {
+          if (armed) root.gripReleased()
+          armed = false
+        }
+        onCanceled: {
+          armed = false
+          root.gripCanceled()
+        }
+      }
+    }
+
+    Item {
+      id: foldSlot
+      width: Style.space(14)
+      height: Style.space(18)
+      anchors.verticalCenter: parent.verticalCenter
+      visible: root.childCount > 0
+
+      Text {
+        anchors.centerIn: parent
+        text: root.collapsed ? "▸" : "▾"
+        color: root.foreground
+        opacity: 0.7
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+      }
+
+      MouseArea {
+        anchors.fill: parent
+        anchors.margins: -4
+        cursorShape: Qt.PointingHandCursor
+        onClicked: root.collapseRequested()
+      }
+    }
 
     BorderSurface {
       id: box
@@ -105,7 +191,8 @@ CursorSurface {
     }
 
     Item {
-      width: parent.width - box.width - dueChip.width - trash.width - parent.spacing * 3
+      width: Math.max(0, parent.width - gripSlot.width - (foldSlot.visible ? foldSlot.width + parent.spacing : 0)
+        - box.width - dueChip.width - trash.width - parent.spacing * 4)
       height: Math.max(editField.implicitHeight, label.implicitHeight)
       anchors.verticalCenter: parent.verticalCenter
 
@@ -195,7 +282,7 @@ CursorSurface {
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
         width: Style.space(108)
-        placeholderText: "YYYY-MM-DD"
+        placeholderText: "today, +3"
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         foreground: root.foreground

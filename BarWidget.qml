@@ -9,7 +9,10 @@ BarWidget {
 
   readonly property var lists: bar && bar.shell
     ? bar.shell.serviceFor("novique.lists") : null
-  readonly property color foreground: bar ? bar.barForeground : Color.foreground
+  readonly property int overdueCount: lists ? lists.overdueCount : 0
+  readonly property color foreground: overdueCount > 0
+    ? Color.urgent
+    : (bar ? bar.barForeground : Color.foreground)
   readonly property bool windowOpen: !!lists && lists.windowOpen === true
 
   function openWindow() {
