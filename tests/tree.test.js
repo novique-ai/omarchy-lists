@@ -119,10 +119,136 @@ test("nested lists survive serialize round-trip", () => {
   let { state, listId, produceId } = grocer()
   state = Model.addChild(state, listId, produceId, "Apples")
   state = Model.setDue(state, listId, produceId, "2026-09-01")
+  state = Model.setCollapsed(state, listId, produceId, true)
+  state = Model.setPinned(state, listId, true)
+  state = Model.toggleHideCompleted(state)
   const reloaded = Model.load(Model.serialize(state))
   const produce = reloaded.lists[0].items[0]
   assert.equal(produce.due, "2026-09-01")
   assert.equal(produce.items[0].text, "Apples")
+  assert.equal(produce.collapsed, true)
+  assert.equal(reloaded.lists[0].pinned, true)
+  assert.equal(reloaded.hideCompleted, true)
+})
+
+test("due words resolve against today and invalid text is ignored", () => {
+  const now = new Date("2026-08-29T12:00:00")
+  let { state, listId, dairyId } = grocer()
+  state = Model.setDue(state, listId, dairyId, "tomorrow", now)
+  assert.equal(Model.findList(state, listId).items[1].due, "2026-08-30")
+  state = Model.setDue(state, listId, dairyId, "+3", now)
+  assert.equal(Model.findList(state, listId).items[1].due, "2026-09-01")
+  state = Model.setDue(state, listId, dairyId, "nope", now)
+  assert.equal(Model.findList(state, listId).items[1].due, "2026-09-01")
+  state = Model.setDue(state, listId, dairyId, "today", now)
+  assert.equal(Model.findList(state, listId).items[1].due, "2026-08-29")
+  assert.equal(Model.parseDueInput("", now), "")
+  assert.equal(Model.parseDueInput("week", now), "2026-09-05")
+})
+
+test("collapse hides children until expandAll, hideCompleted skips checked rows", () => {
+  let { state, listId, produceId } = grocer()
+  state = Model.addChild(state, listId, produceId, "Apples")
+  state = Model.setCollapsed(state, listId, produceId, true)
+  const now = new Date("2026-08-29T12:00:00")
+  let rows = Model.flattenItems(Model.findList(state, listId), now)
+  deepEqual(rows.map((row) => row.text), ["Produce", "Dairy"])
+  rows = Model.flattenItems(Model.findList(state, listId), now, { expandAll: true })
+  deepEqual(rows.map((row) => row.text), ["Produce", "Apples", "Dairy"])
+
+  const applesId = Model.findList(state, listId).items[0].items[0].id
+  state = Model.toggleItem(state, listId, applesId)
+  rows = Model.flattenItems(Model.findList(state, listId), now, {
+    hideCompleted: true,
+    expandAll: true
+  })
+  deepEqual(rows.map((row) => row.text), ["Produce", "Dairy"])
+})
+
+test("moveItem swaps siblings and moveItemTo reparents", () => {
+  let { state, listId, produceId, dairyId } = grocer()
+  state = Model.addItem(state, listId, "Bread")
+  const breadId = Model.findList(state, listId).items[2].id
+  state = Model.moveItem(state, listId, breadId, -1)
+  deepEqual(texts(Model.findList(state, listId)), ["Produce", "Bread", "Dairy"])
+  state = Model.moveItem(state, listId, produceId, -1)
+  deepEqual(texts(Model.findList(state, listId)), ["Produce", "Bread", "Dairy"])
+
+  state = Model.moveItemTo(state, listId, breadId, produceId, "inside")
+  const produce = Model.findList(state, listId).items[0]
+  assert.equal(produce.text, "Produce")
+  assert.equal(produce.collapsed, false)
+  deepEqual(produce.items.map((item) => item.text), ["Bread"])
+  assert.equal(Model.canMoveItem(Model.findList(state, listId), produceId, breadId, "inside"), false)
+
+  state = Model.moveItemTo(state, listId, breadId, dairyId, "before")
+  deepEqual(texts(Model.findList(state, listId)), ["Produce", "Bread", "Dairy"])
+})
+
+test("clearCompleted drops checked items and anything nested under them", () => {
+  let { state, listId, produceId, dairyId } = grocer()
+  state = Model.addChild(state, listId, produceId, "Apples")
+  state = Model.toggleItem(state, listId, produceId)
+  state = Model.toggleItem(state, listId, dairyId)
+  state = Model.addItem(state, listId, "Bread")
+  state = Model.clearCompleted(state, listId)
+  deepEqual(texts(Model.findList(state, listId)), ["Bread"])
+})
+
+test("search matches titles and nested item text", () => {
+  let { state, listId, produceId } = grocer()
+  state = Model.addChild(state, listId, produceId, "Apples")
+  const list = Model.findList(state, listId)
+  assert.equal(Model.listMatches(list, ""), true)
+  assert.equal(Model.listMatches(list, "groc"), true)
+  assert.equal(Model.listMatches(list, "appl"), true)
+  assert.equal(Model.listMatches(list, "zzz"), false)
+})
+
+test("reorderList and moveList stay inside the open or archived section", () => {
+  let state = Model.createList(Model.emptyState(), "A")
+  state = Model.createList(state, "B")
+  state = Model.createList(state, "C")
+  const c = state.lists[0].id
+  const b = state.lists[1].id
+  const a = state.lists[2].id
+  state = Model.setArchived(state, b, true)
+  state = Model.reorderList(state, c, a, true)
+  deepEqual(
+    Model.openLists(state).map((list) => list.title),
+    ["A", "C"]
+  )
+  const before = Model.openLists(state).map((list) => list.id)
+  state = Model.reorderList(state, c, b, true)
+  deepEqual(Model.openLists(state).map((list) => list.id), before)
+  state = Model.moveList(state, a, -1)
+  deepEqual(Model.openLists(state).map((list) => list.id), before)
+  state = Model.moveList(state, c, -1)
+  deepEqual(
+    Model.openLists(state).map((list) => list.title),
+    ["C", "A"]
+  )
+})
+
+test("duplicateList copies items under new ids and selects the copy", () => {
+  let { state, listId, produceId } = grocer()
+  state = Model.addChild(state, listId, produceId, "Apples")
+  state = Model.setPinned(state, listId, true)
+  state = Model.duplicateList(state, listId)
+  assert.equal(state.lists[1].title, "Groceries copy")
+  assert.equal(state.selectedId, state.lists[1].id)
+  assert.equal(state.lists[1].pinned, true)
+  assert.notEqual(state.lists[1].id, listId)
+  assert.notEqual(state.lists[1].items[0].id, produceId)
+  assert.equal(state.lists[1].items[0].items[0].text, "Apples")
+  assert.notEqual(state.lists[1].items[0].items[0].id, state.lists[0].items[0].items[0].id)
+})
+
+test("overdue wins the bar tooltip", () => {
+  let { state, listId, dairyId } = grocer()
+  state = Model.setDue(state, listId, dairyId, "2026-08-28")
+  assert.equal(Model.barTooltip(state, new Date("2026-08-29T12:00:00")), "Lists — 1 overdue")
+  assert.equal(Model.attention(state, new Date("2026-08-29T12:00:00")).today, 0)
 })
 
 function texts(list) {
